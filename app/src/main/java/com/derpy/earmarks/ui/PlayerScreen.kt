@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.ui
+package com.derpy.earmarks.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -20,6 +21,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,18 +33,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.dirplay.earmarks.player.PlayerState
+import com.derpy.earmarks.player.PlayerState
 
 @Composable
 fun PlayerScreen(
     appState: AppState,
     playerState: PlayerState,
+    stats: BlossomStats,
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
+    onDeleteCurrent: () -> Unit,
     onClearKey: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     if (showSettings) {
         AlertDialog(
@@ -54,6 +59,28 @@ fun PlayerScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showSettings = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        val title = playerState.title.ifBlank { "this earmark" }
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete earmark?") },
+            text = {
+                Text(
+                    "This will permanently remove \"$title\" from your earmark list " +
+                        "and delete its files from every Blossom server. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onDeleteCurrent(); showDeleteConfirm = false }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
             }
         )
     }
@@ -120,6 +147,15 @@ fun PlayerScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline)
                 }
+                if (appState.unavailable > 0) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "${appState.unavailable} earmark(s) unavailable — retry next launch",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
             is AppState.Error -> {
                 Text(appState.message,
@@ -138,6 +174,17 @@ fun PlayerScreen(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = { showDeleteConfirm = true },
+                enabled = controlsEnabled
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete current earmark",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
             IconButton(onClick = onSkipPrevious, enabled = controlsEnabled) {
                 Icon(Icons.Default.SkipPrevious, contentDescription = "Previous",
                     modifier = Modifier.size(36.dp))
@@ -155,6 +202,39 @@ fun PlayerScreen(
                     modifier = Modifier.size(36.dp))
             }
         }
-        Spacer(Modifier.height(32.dp))
+
+        Spacer(Modifier.height(24.dp))
+
+        StatsPanel(stats = stats)
+
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun StatsPanel(stats: BlossomStats) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Text(
+                "Blossom storage",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${stats.totalEarmarks} earmarks · ${stats.totalParts} parts",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "%.1f MB".format(stats.totalMb),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 }

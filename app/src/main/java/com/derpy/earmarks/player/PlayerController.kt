@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.player
+package com.derpy.earmarks.player
 
 import android.content.ComponentName
 import android.content.Context
@@ -8,7 +8,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.dirplay.earmarks.data.Earmark
+import com.derpy.earmarks.data.Earmark
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,8 +28,36 @@ class PlayerController(private val context: Context) {
 
     private var controller: MediaController? = null
 
+    /** Shuffled earmark list that mirrors the MediaItems given to the controller. */
+    private val shuffledEarmarks = mutableListOf<Earmark>()
+
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state.asStateFlow()
+
+    /** Returns the earmark currently playing, or null if nothing is loaded. */
+    fun currentEarmark(): Earmark? {
+        val mc = controller ?: return null
+        val idx = mc.currentMediaItemIndex
+        return shuffledEarmarks.getOrNull(idx)
+    }
+
+    /**
+     * Removes the currently-playing item from the playlist and advances to the
+     * next track. Returns the removed earmark, or null if nothing was playing.
+     */
+    fun removeCurrentItem(): Earmark? {
+        val mc = controller ?: return null
+        val idx = mc.currentMediaItemIndex
+        if (idx < 0 || idx >= shuffledEarmarks.size) return null
+        val removed = shuffledEarmarks.removeAt(idx)
+        mc.removeMediaItem(idx)
+        if (shuffledEarmarks.isNotEmpty()) {
+            mc.prepare()
+            mc.play()
+        }
+        updateState()
+        return removed
+    }
 
     fun connect(onConnected: () -> Unit) {
         val sessionToken = SessionToken(
@@ -52,6 +80,8 @@ class PlayerController(private val context: Context) {
 
     fun setPlaylist(files: List<Pair<File, Earmark>>) {
         val shuffled = files.shuffled()
+        shuffledEarmarks.clear()
+        shuffledEarmarks.addAll(shuffled.map { it.second })
         val items = shuffled.map { (file, earmark) ->
             MediaItem.Builder()
                 .setUri(Uri.fromFile(file))

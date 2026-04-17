@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.ui
+package com.derpy.earmarks.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

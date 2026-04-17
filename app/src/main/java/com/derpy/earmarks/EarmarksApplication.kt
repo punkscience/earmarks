@@ -1,4 +1,4 @@
-package com.dirplay.earmarks
+package com.derpy.earmarks
 
 import android.app.Application
 

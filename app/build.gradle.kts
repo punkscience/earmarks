@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.dirplay.earmarks"
+    namespace = "com.derpy.earmarks"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.dirplay.earmarks"
+        applicationId = "com.derpy.earmarks"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.player
+package com.derpy.earmarks.player
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

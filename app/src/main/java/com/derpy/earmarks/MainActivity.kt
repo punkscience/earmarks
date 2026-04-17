@@ -1,4 +1,4 @@
-package com.dirplay.earmarks
+package com.derpy.earmarks
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,10 +12,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dirplay.earmarks.ui.AppState
-import com.dirplay.earmarks.ui.KeyEntryScreen
-import com.dirplay.earmarks.ui.MainViewModel
-import com.dirplay.earmarks.ui.PlayerScreen
+import com.derpy.earmarks.ui.AppState
+import com.derpy.earmarks.ui.KeyEntryScreen
+import com.derpy.earmarks.ui.MainViewModel
+import com.derpy.earmarks.ui.PlayerScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
                     val vm: MainViewModel = viewModel()
                     val appState by vm.state.collectAsState()
                     val playerState by vm.playerState.collectAsState()
+                    val stats by vm.stats.collectAsState()
 
                     if (appState is AppState.KeyMissing) {
                         KeyEntryScreen(onSaveKey = { vm.saveKey(it) })
@@ -34,9 +35,11 @@ class MainActivity : ComponentActivity() {
                         PlayerScreen(
                             appState = appState,
                             playerState = playerState,
+                            stats = stats,
                             onPlayPause = { vm.player.playPause() },
                             onSkipNext = { vm.player.skipNext() },
                             onSkipPrevious = { vm.player.skipPrevious() },
+                            onDeleteCurrent = { vm.deleteCurrent() },
                             onClearKey = { vm.clearKey() }
                         )
                     }

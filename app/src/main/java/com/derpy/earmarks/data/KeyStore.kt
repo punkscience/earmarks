@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.data
+package com.derpy.earmarks.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore

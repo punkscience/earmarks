@@ -1,6 +1,6 @@
-# dirplay Android Earmarks Player — Implementation Spec
+# derpy Android Earmarks Player — Implementation Spec
 
-This document contains everything needed to build an Android application that reads a user's dirplay earmark list from Nostr, downloads their earmarked audio files from Blossom servers, decrypts them, and plays them as a playlist.
+This document contains everything needed to build an Android application that reads a user's derpy earmark list from Nostr, downloads their earmarked audio files from Blossom servers, decrypts them, and plays them as a playlist.
 
 ---
 
@@ -47,7 +47,7 @@ The public key is the secp256k1 compressed x-coordinate of `privKey * G`, serial
 
 ## Step 2 — Fetch the earmark list from Nostr
 
-The earmark list is a **NIP-51 kind-30001 addressable event** with a `d` tag of `"dirplay-earmarks"`.
+The earmark list is a **NIP-51 kind-30001 addressable event** with a `d` tag of `"derpy-earmarks"`.
 
 ### Query filter
 
@@ -57,7 +57,7 @@ Connect to one or more Nostr relays via WebSocket and send:
 {
   "kinds": [30001],
   "authors": ["<user-pubkey-hex>"],
-  "#d": ["dirplay-earmarks"],
+  "#d": ["derpy-earmarks"],
   "limit": 1
 }
 ```
@@ -76,7 +76,7 @@ When querying multiple relays in parallel, keep the event with the highest `crea
 
 The event `content` is NIP-44 encrypted. The encryption scheme is **ChaCha20-Poly1305** with a key derived from a secp256k1 ECDH shared secret.
 
-The twist: dirplay uses **self-encryption** — the user encrypts to themselves. The "recipient" public key passed to the ECDH is the user's own public key.
+The twist: derpy uses **self-encryption** — the user encrypts to themselves. The "recipient" public key passed to the ECDH is the user's own public key.
 
 **NIP-44 conversation key derivation:**
 
@@ -311,7 +311,7 @@ Decode to hex privKey
         ↓
 Derive pubKey (secp256k1)
         ↓
-Query Nostr relays for kind-30001, d="dirplay-earmarks", author=pubKey
+Query Nostr relays for kind-30001, d="derpy-earmarks", author=pubKey
         ↓
 Decrypt content with NIP-44 (self-encryption: recipient = own pubKey)
         ↓
@@ -351,7 +351,7 @@ Play
 | Constant | Value |
 |----------|-------|
 | Earmark list event kind | `30001` |
-| Earmark list `d` tag | `"dirplay-earmarks"` |
+| Earmark list `d` tag | `"derpy-earmarks"` |
 | Chunk size (plaintext) | `16 * 1024 * 1024` bytes (16 MiB) |
 | Encrypted chunk overhead | 12 bytes (nonce) + 16 bytes (GCM tag) = 28 bytes |
 | AES key size | 32 bytes (AES-256) |

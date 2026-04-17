@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.data
+package com.derpy.earmarks.data
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +23,39 @@ data class Earmark(
     val ts: Long,
     val blossom: BlossomManifest?
 )
+
+fun earmarksToJson(earmarks: List<Earmark>): String {
+    val arr = JSONArray()
+    for (e in earmarks) {
+        val obj = JSONObject()
+        obj.put("artist", e.artist)
+        obj.put("album", e.album)
+        obj.put("title", e.title)
+        obj.put("ts", e.ts)
+        if (e.blossom != null) {
+            val b = JSONObject()
+            b.put("key", e.blossom.key)
+            b.put("ext", e.blossom.ext)
+            val chunks = JSONArray()
+            for (c in e.blossom.chunks) {
+                val co = JSONObject()
+                co.put("index", c.index)
+                co.put("sha256", c.sha256)
+                co.put("size", c.size)
+                val servers = JSONArray()
+                c.servers.forEach { servers.put(it) }
+                co.put("servers", servers)
+                chunks.put(co)
+            }
+            b.put("chunks", chunks)
+            obj.put("blossom", b)
+        } else {
+            obj.put("blossom", JSONObject.NULL)
+        }
+        arr.put(obj)
+    }
+    return arr.toString()
+}
 
 fun parseEarmarkList(json: String): List<Earmark> {
     val arr = JSONArray(json)

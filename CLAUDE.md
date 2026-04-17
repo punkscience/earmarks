@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Earwax** is a minimal Android app (Kotlin + Jetpack Compose) that reads a user's *dirplay* earmark list from Nostr, downloads their earmarked audio files from Blossom servers, decrypts them, caches them locally, and plays them in a shuffled playlist. Audio persists in the background and the app is Android Auto compatible.
+**Earwax** is a minimal Android app (Kotlin + Jetpack Compose) that reads a user's *derpy* earmark list from Nostr, downloads their earmarked audio files from Blossom servers, decrypts them, caches them locally, and plays them in a shuffled playlist. Audio persists in the background and the app is Android Auto compatible.
 
 Full protocol spec: `docs/ANDROID_EARMARKS_SPEC.md`
 
@@ -23,7 +23,7 @@ Full protocol spec: `docs/ANDROID_EARMARKS_SPEC.md`
 ## Architecture
 
 ```
-app/src/main/java/com/dirplay/earwax/
+app/src/main/java/com/derpy/earmarks/
 ├── MainActivity.kt            — Compose entry: routes to KeyEntryScreen or PlayerScreen
 ├── EarwaxApplication.kt       — Application subclass (referenced in manifest)
 ├── data/
@@ -54,7 +54,7 @@ The rust-nostr Android SDK (`org.rust-nostr:nostr-sdk`) doesn't yet expose NIP-4
 - ChaCha20 decrypt via `ChaCha7539Engine` (IETF variant, 96-bit nonce)
 - MAC verification via `javax.crypto.Mac` HMAC-SHA256
 
-**Self-encryption**: dirplay encrypts the earmark list to the user's own public key. The shared secret is `privkey^2 * G` on secp256k1.
+**Self-encryption**: derpy encrypts the earmark list to the user's own public key. The shared secret is `privkey^2 * G` on secp256k1.
 
 **Nostr relay access**: Raw OkHttp WebSocket, no Nostr library. Sends NIP-01 REQ/EVENT/EOSE JSON manually. Queries all 4 default relays in parallel, takes the event with the highest `created_at`.
 
@@ -76,7 +76,7 @@ The rust-nostr Android SDK (`org.rust-nostr:nostr-sdk`) doesn't yet expose NIP-4
 
 | Item | Value |
 |------|-------|
-| Earmark event kind | `30001`, `d` tag = `"dirplay-earmarks"` |
+| Earmark event kind | `30001`, `d` tag = `"derpy-earmarks"` |
 | NIP-44 conversation key salt | `"nip44-v2"` (UTF-8) |
 | NIP-44 message key info | `"encryption"` (UTF-8) |
 | NIP-44 message key length | 76 bytes → [0:32] chacha key, [32:44] chacha nonce, [44:76] hmac key |

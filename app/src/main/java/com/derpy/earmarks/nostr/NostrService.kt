@@ -1,7 +1,8 @@
-package com.dirplay.earmarks.nostr
+package com.derpy.earmarks.nostr
 
-import com.dirplay.earmarks.data.Earmark
-import com.dirplay.earmarks.data.parseEarmarkList
+import com.derpy.earmarks.data.Earmark
+import com.derpy.earmarks.data.earmarksToJson
+import com.derpy.earmarks.data.parseEarmarkList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -25,10 +26,19 @@ private val DEFAULT_RELAYS = listOf(
     "wss://nostr.wine"
 )
 
+/**
+ * The NIP-51 `d` tag the desktop app publishes earmark lists under. The
+ * desktop project was previously called "dirplay" and used a different tag,
+ * but a one-shot migration on the desktop side republishes existing lists
+ * under this name and issues a NIP-09 deletion for the legacy event, so the
+ * Android app only ever needs to know about the current tag.
+ */
+private const val EARMARK_D_TAG = "derpy-earmarks"
+
 class NostrService(private val httpClient: OkHttpClient) {
 
     /**
-     * Fetches and decrypts the dirplay earmark list for [privKeyHex].
+     * Fetches and decrypts the derpy earmark list for [privKeyHex].
      * Queries all default relays in parallel and keeps the most recent event.
      */
     suspend fun fetchEarmarks(privKeyHex: String): List<Earmark> = withContext(Dispatchers.IO) {
@@ -38,7 +48,7 @@ class NostrService(private val httpClient: OkHttpClient) {
         val filterJson = JSONObject().apply {
             put("kinds", JSONArray().put(30001))
             put("authors", JSONArray().put(pubKeyHex))
-            put("#d", JSONArray().put("dirplay-earmarks"))
+            put("#d", JSONArray().put(EARMARK_D_TAG))
             put("limit", 1)
         }
         val reqMessage = JSONArray().apply {
@@ -64,6 +74,82 @@ class NostrService(private val httpClient: OkHttpClient) {
         val plaintext = Nip44.decrypt(privKeyHex, encryptedContent)
         parseEarmarkList(plaintext)
     }
+
+    /**
+     * Publishes [event] to all default relays in parallel. Returns the number
+     * of relays that accepted it (received an "OK" message with success=true).
+     */
+    suspend fun publishEvent(event: JSONObject): Int = withContext(Dispatchers.IO) {
+        val results = coroutineScope {
+            DEFAULT_RELAYS.map { relay ->
+                async { publishToRelay(relay, event) }
+            }.awaitAll()
+        }
+        results.count { it }
+    }
+
+    /**
+     * Encrypts and publishes [earmarks] as a NIP-51 kind-30001 addressable
+     * event. Because the event is addressable, relays automatically replace
+     * the previous version (same pubkey + kind + d tag).
+     *
+     * Returns the number of relays that accepted the event.
+     */
+    suspend fun publishEarmarks(privKeyHex: String, earmarks: List<Earmark>): Int =
+        withContext(Dispatchers.IO) {
+            val plaintext = earmarksToJson(earmarks)
+            val ciphertext = Nip44.encrypt(privKeyHex, plaintext)
+            val event = NostrEvent.build(
+                privKeyHex = privKeyHex,
+                kind = 30001,
+                content = ciphertext,
+                tags = listOf(listOf("d", EARMARK_D_TAG))
+            )
+            publishEvent(event)
+        }
+
+    /**
+     * Opens a WebSocket to [relayUrl] and sends an EVENT message. Waits for
+     * the relay's OK reply. Returns true if the relay accepted the event.
+     */
+    private suspend fun publishToRelay(
+        relayUrl: String,
+        event: JSONObject
+    ): Boolean = withTimeoutOrNull(15_000L) {
+        suspendCancellableCoroutine { cont ->
+            val msg = JSONArray().apply {
+                put("EVENT")
+                put(event)
+            }.toString()
+            val request = Request.Builder().url(relayUrl).build()
+            val ws = httpClient.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    webSocket.send(msg)
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    try {
+                        val arr = JSONArray(text)
+                        if (arr.getString(0) == "OK" &&
+                            arr.getString(1) == event.getString("id")) {
+                            val ok = arr.getBoolean(2)
+                            webSocket.close(1000, null)
+                            if (cont.isActive) cont.resume(ok)
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    if (cont.isActive) cont.resume(false)
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            })
+            cont.invokeOnCancellation { ws.cancel() }
+        }
+    } ?: false
 
     /**
      * Opens a WebSocket to [relayUrl], sends [reqMessage], and waits for a matching EVENT.

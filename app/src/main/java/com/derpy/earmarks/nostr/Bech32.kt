@@ -1,4 +1,4 @@
-package com.dirplay.earmarks.nostr
+package com.derpy.earmarks.nostr
 
 /**
  * Minimal bech32 decoder for nsec1 private keys.
