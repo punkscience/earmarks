@@ -1,5 +1,6 @@
 package com.derpy.earmarks.nostr
 
+import android.util.Log
 import com.derpy.earmarks.data.Earmark
 import com.derpy.earmarks.data.earmarksToJson
 import com.derpy.earmarks.data.parseEarmarkList
@@ -18,6 +19,8 @@ import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.coroutines.resume
+
+private const val TAG = "NostrService"
 
 private val DEFAULT_RELAYS = listOf(
     "wss://relay.damus.io",
@@ -80,12 +83,16 @@ class NostrService(private val httpClient: OkHttpClient) {
      * of relays that accepted it (received an "OK" message with success=true).
      */
     suspend fun publishEvent(event: JSONObject): Int = withContext(Dispatchers.IO) {
+        val eventId = event.optString("id")
+        Log.d(TAG, "publishEvent id=${eventId.take(12)}… kind=${event.optInt("kind")} to ${DEFAULT_RELAYS.size} relays")
         val results = coroutineScope {
             DEFAULT_RELAYS.map { relay ->
                 async { publishToRelay(relay, event) }
             }.awaitAll()
         }
-        results.count { it }
+        val acks = results.count { it }
+        Log.d(TAG, "publishEvent id=${eventId.take(12)}… acks=$acks/${results.size}")
+        acks
     }
 
     /**
@@ -111,6 +118,10 @@ class NostrService(private val httpClient: OkHttpClient) {
     /**
      * Opens a WebSocket to [relayUrl] and sends an EVENT message. Waits for
      * the relay's OK reply. Returns true if the relay accepted the event.
+     *
+     * Logs everything — open, send, OK/NOTICE, failure, timeout — under the
+     * "NostrService" tag so relay-level rejections can be distinguished from
+     * real connection failures in logcat.
      */
     private suspend fun publishToRelay(
         relayUrl: String,
@@ -121,35 +132,53 @@ class NostrService(private val httpClient: OkHttpClient) {
                 put("EVENT")
                 put(event)
             }.toString()
+            val eventId = event.optString("id")
             val request = Request.Builder().url(relayUrl).build()
             val ws = httpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.d(TAG, "publish→$relayUrl OPEN, sending event id=${eventId.take(12)}…")
                     webSocket.send(msg)
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     try {
                         val arr = JSONArray(text)
-                        if (arr.getString(0) == "OK" &&
-                            arr.getString(1) == event.getString("id")) {
-                            val ok = arr.getBoolean(2)
-                            webSocket.close(1000, null)
-                            if (cont.isActive) cont.resume(ok)
+                        when (arr.optString(0)) {
+                            "OK" -> if (arr.optString(1) == eventId) {
+                                val ok = arr.optBoolean(2, false)
+                                val reason = arr.optString(3, "")
+                                Log.d(TAG, "publish→$relayUrl OK accepted=$ok reason=\"$reason\"")
+                                webSocket.close(1000, null)
+                                if (cont.isActive) cont.resume(ok)
+                            }
+                            "NOTICE" -> {
+                                Log.w(TAG, "publish→$relayUrl NOTICE ${arr.optString(1)}")
+                            }
+                            else -> {
+                                Log.v(TAG, "publish→$relayUrl msg=$text")
+                            }
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "publish→$relayUrl parse error on \"$text\": ${e.message}")
+                    }
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.w(TAG, "publish→$relayUrl FAILURE ${t.javaClass.simpleName}: ${t.message}")
                     if (cont.isActive) cont.resume(false)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    Log.d(TAG, "publish→$relayUrl CLOSED code=$code reason=\"$reason\"")
                     if (cont.isActive) cont.resume(false)
                 }
             })
             cont.invokeOnCancellation { ws.cancel() }
         }
-    } ?: false
+    } ?: run {
+        Log.w(TAG, "publish→$relayUrl TIMEOUT (15s)")
+        false
+    }
 
     /**
      * Opens a WebSocket to [relayUrl], sends [reqMessage], and waits for a matching EVENT.
