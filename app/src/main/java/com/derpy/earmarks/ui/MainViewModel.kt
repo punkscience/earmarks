@@ -67,6 +67,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _stats = MutableStateFlow(BlossomStats(0, 0, 0))
     val stats: StateFlow<BlossomStats> = _stats.asStateFlow()
 
+    /**
+     * Transient, dismissible message channel for background-op failures
+     * (delete retries, Nostr relay failures, etc.) that shouldn't hijack
+     * the page-level [AppState]. The UI renders these as a dialog with an
+     * "OK" button; [dismissNotice] clears it.
+     */
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    fun dismissNotice() { _notice.value = null }
+
     /** Active earmark list — kept in sync with what the player is playing. */
     private var currentEarmarks: List<Earmark> = emptyList()
 
@@ -224,103 +235,80 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Deletes the currently-playing earmark.
      *
-     * Reliability contract: once Blossom blobs have been deleted, the Nostr
-     * list MUST be updated to drop the now-broken pointer. We achieve this
-     * with three layered defenses:
+     * UX contract: the UI advances IMMEDIATELY. All network work (Blossom
+     * blob deletes, Nostr publish, cache cleanup) happens in a background
+     * coroutine that never touches the page-level [AppState]. Background
+     * failures surface via [_notice] as a dismissible dialog so the user
+     * can get back to playback without restarting the app.
+     *
+     * Reliability contract: once blobs are deleted the Nostr list MUST
+     * eventually lose the pointer. Three layered defenses:
      *
      *  1. **Sentinel first.** Before touching any blob we add the earmark's
-     *     `ts` to [PendingPruneStore] (an on-disk JSON file in `filesDir`).
-     *     If the process dies at any later step, [load] on next launch will
-     *     republish the list with this entry removed.
+     *     `ts` to [PendingPruneStore] (on-disk JSON in `filesDir`). If the
+     *     process dies at any later step, [load] on next launch republishes
+     *     the list with this entry removed.
      *  2. **Retry with backoff.** [publishWithRetry] calls `publishEarmarks`
      *     up to 5 times with exponential backoff (1s/2s/4s/8s/16s) and only
-     *     considers the publish successful when ≥1 relay ack'd. The previous
-     *     implementation ignored the return value entirely.
-     *  3. **NonCancellable scope.** The post-blob phase runs under
-     *     [NonCancellable] in [GlobalScope] so backgrounding/closing the app
-     *     can't tear down the publish coroutine before it succeeds or
-     *     persists the sentinel for next-launch reconciliation.
+     *     considers publish successful on ≥1 relay ack.
+     *  3. **NonCancellable / GlobalScope.** The post-blob phase runs under
+     *     [NonCancellable] in [GlobalScope] so backgrounding the app can't
+     *     tear down the publish coroutine before it succeeds or persists
+     *     the sentinel for next-launch reconciliation.
      *
-     * Ordering still matters: blobs first, then publish. The sentinel is the
-     * bridge that converts a "publish-after-blob-delete failure" from a
-     * permanent orphan into a retry on next launch.
+     * Ordering still matters for the contract: blobs first, then publish.
+     * The UI change precedes both but is purely cosmetic — the sentinel is
+     * what guarantees eventual convergence.
      */
     @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     fun deleteCurrent() {
         val earmark = player.currentEarmark() ?: return
 
-        // Optimistic UI: skip to the next track immediately so the user isn't
-        // stuck listening to the deleted song during network operations.
+        // ---- Immediate, synchronous UI update. ----
         player.removeCurrentItem()
+        val updated = currentEarmarks.filterNot { it.ts == earmark.ts }
+        currentEarmarks = updated
+        recomputeStats()
+        _state.value = if (updated.isEmpty()) {
+            AppState.Error("No earmarks left")
+        } else {
+            AppState.Playing(updated)
+        }
 
-        // Snapshot the list as the player saw it; do all subsequent work
-        // against this snapshot rather than the (possibly mutating) field.
-        val snapshot = currentEarmarks
-        val updated = snapshot.filterNot { it.ts == earmark.ts }
-
-        // Use GlobalScope + NonCancellable so closing the app mid-delete
-        // can't strand us between blob delete and Nostr publish.
+        // ---- Background IO. Never writes to _state. ----
         GlobalScope.launch {
             withContext(NonCancellable) {
                 try {
                     val privKeyHex = keyStore.getKey() ?: return@withContext
-
-                    // 1. Record the intent to prune BEFORE deleting any blob.
-                    //    If anything below fails or we get killed, load() will
-                    //    republish the list without this ts on next launch.
                     pendingPrune.add(earmark.ts)
 
-                    // 2. Delete every blob from every server. Abort if any
-                    //    (chunk × server) pair failed — orphans are forever.
                     val manifest = earmark.blossom
                     if (manifest != null) {
                         val result = blossomService.deleteManifest(manifest, privKeyHex)
                         if (!result.allSucceeded) {
-                            // Roll back the sentinel: blobs are still intact,
-                            // so the user can retry without us nuking the
-                            // entry on next launch.
-                            pendingPrune.remove(earmark.ts)
-                            _state.value = AppState.Error(
-                                "Couldn't delete ${result.failed} Blossom blob(s). " +
-                                    "Earmark left intact — try again later. " +
+                            // Sentinel stays put so next launch reconciles.
+                            // UI already advanced; surface a dismissible notice.
+                            _notice.value =
+                                "${result.failed} Blossom blob(s) couldn't be deleted. " +
+                                    "Will retry on next launch. " +
                                     "First error: ${result.firstError ?: "unknown"}"
-                            )
                             return@withContext
                         }
                     }
 
-                    // 3. Publish updated list with retry/backoff. The sentinel
-                    //    keeps us safe even if every retry in this session
-                    //    fails — next launch will pick up the slack.
                     val acks = publishWithRetry(privKeyHex, updated)
-
-                    // 4. Local bookkeeping. We do these regardless of ack
-                    //    count because the blobs are gone either way and the
-                    //    sentinel guarantees the published list converges.
-                    currentEarmarks = updated
-                    recomputeStats()
                     cache.getCachedFile(earmark)?.delete()
 
                     if (acks > 0) {
                         pendingPrune.remove(earmark.ts)
-                        if (updated.isEmpty()) {
-                            _state.value = AppState.Error("No earmarks left")
-                        } else {
-                            _state.value = AppState.Playing(updated)
-                        }
                     } else {
-                        // Sentinel stays put — next launch will reconcile.
-                        _state.value = AppState.Error(
-                            "Saved deletion locally but couldn't reach any Nostr relay. " +
-                                "Will retry on next app launch."
-                        )
+                        _notice.value =
+                            "Deletion saved locally but couldn't reach any Nostr relay. " +
+                                "Will retry on next launch."
                     }
                 } catch (e: Exception) {
-                    // Sentinel intentionally left in place: if blobs were
-                    // deleted, the next launch must republish to converge.
-                    _state.value = AppState.Error(
+                    _notice.value =
                         "Delete error: ${e.message ?: "unknown"} — will retry on next launch."
-                    )
                 }
             }
         }

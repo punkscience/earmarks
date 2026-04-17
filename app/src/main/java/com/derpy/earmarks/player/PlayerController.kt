@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.derpy.earmarks.data.Earmark
@@ -42,20 +43,34 @@ class PlayerController(private val context: Context) {
     }
 
     /**
-     * Removes the currently-playing item from the playlist and advances to the
-     * next track. Returns the removed earmark, or null if nothing was playing.
+     * Removes the currently-playing item from the playlist and advances to
+     * the next track. Returns the removed earmark, or null if nothing was
+     * playing.
+     *
+     * Order matters: we seek to the next item FIRST (which produces a clean
+     * onMediaItemTransition event with the next item's metadata), then
+     * remove the now-unselected item from the timeline. Going the other
+     * direction (removeMediaItem on the currently-playing item) sometimes
+     * fails to propagate a fresh metadata snapshot to the MediaController
+     * proxy, leaving the UI stuck on the deleted title even after audio has
+     * moved on. seekToNext + remove avoids that path entirely.
      */
     fun removeCurrentItem(): Earmark? {
         val mc = controller ?: return null
         val idx = mc.currentMediaItemIndex
         if (idx < 0 || idx >= shuffledEarmarks.size) return null
         val removed = shuffledEarmarks.removeAt(idx)
-        mc.removeMediaItem(idx)
+
         if (shuffledEarmarks.isNotEmpty()) {
-            mc.prepare()
-            mc.play()
+            // With REPEAT_MODE_ALL, seekToNextMediaItem wraps from last→first.
+            mc.seekToNextMediaItem()
+            // Timeline still contains the deleted item; it's at `idx` because
+            // we haven't removed anything yet from the controller's view.
+            mc.removeMediaItem(idx)
+        } else {
+            // Last item: no next to seek to. Just remove; player enters ENDED.
+            mc.removeMediaItem(idx)
         }
-        updateState()
         return removed
     }
 
@@ -72,6 +87,8 @@ class PlayerController(private val context: Context) {
                     override fun onIsPlayingChanged(isPlaying: Boolean) = updateState()
                     override fun onMediaItemTransition(item: MediaItem?, reason: Int) = updateState()
                     override fun onPlaybackStateChanged(state: Int) = updateState()
+                    override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateState()
+                    override fun onTimelineChanged(timeline: Timeline, reason: Int) = updateState()
                 })
                 onConnected()
             }
@@ -113,7 +130,11 @@ class PlayerController(private val context: Context) {
 
     private fun updateState() {
         val mc = controller ?: return
-        val meta = mc.mediaMetadata
+        // Prefer the current MediaItem's own metadata over mc.mediaMetadata
+        // because the latter sometimes lags during timeline edits; the
+        // MediaItem's metadata is a direct reference to what we built in
+        // setPlaylist, so it's always authoritative.
+        val meta = mc.currentMediaItem?.mediaMetadata ?: mc.mediaMetadata
         _state.value = PlayerState(
             isPlaying = mc.isPlaying,
             title = meta.title?.toString() ?: "",

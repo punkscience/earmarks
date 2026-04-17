@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
                     val appState by vm.state.collectAsState()
                     val playerState by vm.playerState.collectAsState()
                     val stats by vm.stats.collectAsState()
+                    val notice by vm.notice.collectAsState()
 
                     if (appState is AppState.KeyMissing) {
                         KeyEntryScreen(onSaveKey = { vm.saveKey(it) })
@@ -36,6 +37,8 @@ class MainActivity : ComponentActivity() {
                             appState = appState,
                             playerState = playerState,
                             stats = stats,
+                            notice = notice,
+                            onDismissNotice = { vm.dismissNotice() },
                             onPlayPause = { vm.player.playPause() },
                             onSkipNext = { vm.player.skipNext() },
                             onSkipPrevious = { vm.player.skipPrevious() },

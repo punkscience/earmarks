@@ -40,6 +40,8 @@ fun PlayerScreen(
     appState: AppState,
     playerState: PlayerState,
     stats: BlossomStats,
+    notice: String?,
+    onDismissNotice: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -48,6 +50,17 @@ fun PlayerScreen(
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (notice != null) {
+        AlertDialog(
+            onDismissRequest = onDismissNotice,
+            title = { Text("Heads up") },
+            text = { Text(notice) },
+            confirmButton = {
+                TextButton(onClick = onDismissNotice) { Text("OK") }
+            }
+        )
+    }
 
     if (showSettings) {
         AlertDialog(
