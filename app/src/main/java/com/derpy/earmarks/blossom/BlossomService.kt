@@ -17,6 +17,7 @@ import org.bouncycastle.crypto.modes.GCMBlockCipher
 import org.bouncycastle.crypto.params.AEADParameters
 import org.bouncycastle.crypto.params.KeyParameter
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 
 class BlossomService(private val httpClient: OkHttpClient) {
@@ -43,6 +44,14 @@ class BlossomService(private val httpClient: OkHttpClient) {
      * writing the result to [destFile]. Never throws on network/HTTP errors —
      * returns a [DownloadResult] so the caller can decide orphan cleanup vs
      * retry-later. (Decryption failures are still wrapped as [Unavailable].)
+     *
+     * Streams one chunk at a time: download → decrypt → write → release. The
+     * previous implementation downloaded every chunk concurrently and then
+     * reduce-concatenated them into a single ByteArray, which peaked at ~3×
+     * the file size and OOM'd the 256MB heap for ~60MB earmarks. Sequential
+     * streaming caps peak memory at roughly two chunks regardless of file
+     * size; the only speed cost is losing inter-chunk download parallelism,
+     * which is acceptable for background prefetch.
      */
     suspend fun downloadAndDecrypt(earmark: Earmark, destFile: File): DownloadResult =
         withContext(Dispatchers.IO) {
@@ -53,38 +62,45 @@ class BlossomService(private val httpClient: OkHttpClient) {
                 return@withContext DownloadResult.Unavailable("AES key must be 32 bytes")
             }
 
-            val fetchResults = coroutineScope {
-                manifest.chunks.map { chunk ->
-                    async(Dispatchers.IO) { downloadChunk(chunk) }
-                }.awaitAll()
-            }
+            val orderedChunks = manifest.chunks.sortedBy { it.index }
 
-            // A single chunk with AllNotFound across every server is enough to
-            // declare the whole earmark orphaned — the file can't be reassembled.
-            manifest.chunks.zip(fetchResults).firstOrNull { (_, r) ->
-                r is ChunkFetchResult.AllNotFound
-            }?.let { (chunk, _) ->
-                return@withContext DownloadResult.Orphaned(chunk.sha256)
-            }
-
-            // Otherwise, any non-success is a transient failure.
-            fetchResults.firstOrNull { it is ChunkFetchResult.TransientFailure }?.let {
-                return@withContext DownloadResult.Unavailable(
-                    (it as ChunkFetchResult.TransientFailure).message
-                )
-            }
-
-            val assembled = try {
-                manifest.chunks.zip(fetchResults)
-                    .sortedBy { it.first.index }
-                    .map { (_, r) -> decryptChunk((r as ChunkFetchResult.Success).bytes, keyBytes) }
-                    .reduce { acc, bytes -> acc + bytes }
+            val result: DownloadResult = try {
+                FileOutputStream(destFile).use { out ->
+                    var terminal: DownloadResult? = null
+                    for (chunk in orderedChunks) {
+                        when (val r = downloadChunk(chunk)) {
+                            is ChunkFetchResult.AllNotFound -> {
+                                terminal = DownloadResult.Orphaned(chunk.sha256)
+                                break
+                            }
+                            is ChunkFetchResult.TransientFailure -> {
+                                terminal = DownloadResult.Unavailable(r.message)
+                                break
+                            }
+                            is ChunkFetchResult.Success -> {
+                                val decrypted = try {
+                                    decryptChunk(r.bytes, keyBytes)
+                                } catch (e: Exception) {
+                                    terminal = DownloadResult.Unavailable(
+                                        "Decrypt failed: ${e.message}"
+                                    )
+                                    break
+                                }
+                                out.write(decrypted)
+                            }
+                        }
+                    }
+                    terminal ?: DownloadResult.Success
+                }
             } catch (e: Exception) {
-                return@withContext DownloadResult.Unavailable("Decrypt failed: ${e.message}")
+                DownloadResult.Unavailable(e.message ?: e.javaClass.simpleName)
             }
 
-            destFile.writeBytes(assembled)
-            DownloadResult.Success
+            // Any non-success path may have partially written destFile. Clear
+            // it so EarmarkCache.getCachedFile doesn't treat a stub as cached
+            // on next launch.
+            if (result !is DownloadResult.Success) destFile.delete()
+            result
         }
 
     /**
