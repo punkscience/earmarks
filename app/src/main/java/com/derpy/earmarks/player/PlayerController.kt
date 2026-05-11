@@ -111,10 +111,12 @@ class PlayerController(private val context: Context) {
                 )
                 .build()
         }
+        // Load the playlist ready to play but DON'T start automatically.
+        // The user controls when playback begins via the play button — autoplay
+        // was startling, especially when coming back to the app in the car.
         controller?.run {
             setMediaItems(items)
             prepare()
-            play()
         }
         _state.value = _state.value.copy(totalTracks = shuffled.size)
     }

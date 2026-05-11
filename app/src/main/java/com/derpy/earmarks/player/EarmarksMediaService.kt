@@ -36,7 +36,14 @@ class EarmarksMediaService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        player = ExoPlayer.Builder(this).build()
+        // handleAudioBecomingNoisy=true makes ExoPlayer auto-pause when the OS
+        // broadcasts ACTION_AUDIO_BECOMING_NOISY — i.e. wired headphones
+        // unplugged, Bluetooth A2DP disconnects, BT speaker out of range. Off
+        // by default in Media3, so audio would otherwise route to the phone's
+        // built-in speaker when the car/headphones drop.
+        player = ExoPlayer.Builder(this)
+            .setHandleAudioBecomingNoisy(true)
+            .build()
         mediaLibrarySession = MediaLibrarySession.Builder(this, player, SessionCallback()).build()
 
         setMediaNotificationProvider(
