@@ -22,7 +22,14 @@ data class PlayerState(
     val artist: String = "",
     val album: String = "",
     val currentIndex: Int = 0,
-    val totalTracks: Int = 0
+    val totalTracks: Int = 0,
+    /**
+     * Embedded album artwork from the audio file's tags (ID3 APIC, Vorbis
+     * METADATA_BLOCK_PICTURE, etc.). ExoPlayer's extractor reads these into
+     * [MediaMetadata.artworkData]; we surface them verbatim so the UI can
+     * decode them with BitmapFactory. Null when the track has no embedded art.
+     */
+    val artworkData: ByteArray? = null
 )
 
 class PlayerController(private val context: Context) {
@@ -132,18 +139,23 @@ class PlayerController(private val context: Context) {
 
     private fun updateState() {
         val mc = controller ?: return
-        // Prefer the current MediaItem's own metadata over mc.mediaMetadata
-        // because the latter sometimes lags during timeline edits; the
-        // MediaItem's metadata is a direct reference to what we built in
-        // setPlaylist, so it's always authoritative.
-        val meta = mc.currentMediaItem?.mediaMetadata ?: mc.mediaMetadata
+        // Title/artist/album come from the MediaItem's static metadata (what
+        // we built in setPlaylist) because mc.mediaMetadata sometimes lags
+        // during timeline edits and would briefly show the deleted item's
+        // text. artworkData has to come from mc.mediaMetadata though — it's
+        // populated by ExoPlayer's extractor after the file is decoded,
+        // never by us at MediaItem-build time.
+        val staticMeta = mc.currentMediaItem?.mediaMetadata
+        val liveMeta = mc.mediaMetadata
+        val textMeta = staticMeta ?: liveMeta
         _state.value = PlayerState(
             isPlaying = mc.isPlaying,
-            title = meta.title?.toString() ?: "",
-            artist = meta.artist?.toString() ?: "",
-            album = meta.albumTitle?.toString() ?: "",
+            title = textMeta.title?.toString() ?: "",
+            artist = textMeta.artist?.toString() ?: "",
+            album = textMeta.albumTitle?.toString() ?: "",
             currentIndex = mc.currentMediaItemIndex,
-            totalTracks = mc.mediaItemCount
+            totalTracks = mc.mediaItemCount,
+            artworkData = liveMeta.artworkData
         )
     }
 }
