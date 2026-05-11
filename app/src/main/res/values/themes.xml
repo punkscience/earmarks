@@ -5,4 +5,16 @@
         <item name="android:windowActionBar">false</item>
         <item name="android:windowBackground">@android:color/black</item>
     </style>
+
+    <!--
+      Launch-time theme for MainActivity. The Android 12+ SplashScreen API uses
+      these windowSplashScreen* attributes; the core-splashscreen compat library
+      emulates the same look on older versions. postSplashScreenTheme is the
+      theme the activity swaps to once installSplashScreen() dismisses.
+    -->
+    <style name="Theme.Earmarks.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.Earmarks</item>
+    </style>
 </resources>

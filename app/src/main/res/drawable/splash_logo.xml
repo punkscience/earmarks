@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon wrapper so the Android 12+ SplashScreen API renders the logo
+  predictably across devices (some implementations clip non-adaptive drawables
+  to a circle). The PNG already has transparent margins, so a white background
+  layer matches the splash's windowSplashScreenBackground for a seamless look.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/splash_background" />
+    <foreground android:drawable="@drawable/splash_logo_raw" />
+</adaptive-icon>
