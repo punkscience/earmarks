@@ -16,6 +16,7 @@ local.properties
 *.iws
 *.ipr
 .DS_Store
+.claude/
 
 # Signing
 *.jks
