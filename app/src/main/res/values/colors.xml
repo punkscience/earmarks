@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="splash_background">#FFFFFFFF</color>
+    <!--
+      Window-background colour shown around the masked icon on the Android 12+
+      splash screen. Chosen mid-cobalt so it blends with the icon's gradient.
+    -->
+    <color name="splash_background">#163FB0</color>
 </resources>
