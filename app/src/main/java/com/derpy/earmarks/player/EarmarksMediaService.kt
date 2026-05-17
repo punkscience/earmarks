@@ -2,6 +2,8 @@ package com.derpy.earmarks.player
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
@@ -41,8 +43,19 @@ class EarmarksMediaService : MediaLibraryService() {
         // unplugged, Bluetooth A2DP disconnects, BT speaker out of range. Off
         // by default in Media3, so audio would otherwise route to the phone's
         // built-in speaker when the car/headphones drop.
+        //
+        // setAudioAttributes(..., handleAudioFocus = true) is what makes us a
+        // good audio-focus citizen: requests AUDIOFOCUS_GAIN on play (so other
+        // media apps pause), ducks during nav prompts (LOSS_TRANSIENT_CAN_DUCK),
+        // pauses on phone calls (LOSS_TRANSIENT) and auto-resumes on regain,
+        // pauses permanently when another app takes focus (LOSS).
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
         player = ExoPlayer.Builder(this)
             .setHandleAudioBecomingNoisy(true)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .build()
         mediaLibrarySession = MediaLibrarySession.Builder(this, player, SessionCallback()).build()
 
