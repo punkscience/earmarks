@@ -83,3 +83,17 @@ The rust-nostr Android SDK (`org.rust-nostr:nostr-sdk`) doesn't yet expose NIP-4
 | Chunk format | `[12-byte nonce][ciphertext][16-byte GCM tag]` |
 | AES key | 32 bytes, base64-decoded from `blossom.key` |
 | Default relays | `wss://relay.damus.io`, `wss://nos.lol`, `wss://relay.primal.net`, `wss://nostr.wine` |
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues at github.com/punkscience/earmarks. Skills use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
